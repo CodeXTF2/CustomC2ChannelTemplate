@@ -56,7 +56,10 @@ You must select wininet as the http library to use when generating the beacon dl
 - https://github.com/benheise/TitanLdr (IAT hooking to implement DoH)
 - https://tradecraftgarden.org/ (framework used for crystal kit, and by extension this)
 
-Yes I used an LLM to write some of the code and comments, nobody likes writing docs or writing boilerplate json parsing in C from scratch.
+Yes I used an LLM to write some of the code and comments, nobody likes writing docs or writing boilerplate json parsing in C from scratch. Sue me.
+
+# Disclaimer
+Usual disclaimer, I am not responsible for any crimes against humanity you may commit or nuclear way you may cause using this piece of poorly written code
 
 
 

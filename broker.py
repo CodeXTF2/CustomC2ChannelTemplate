@@ -248,10 +248,10 @@ def main() -> None:
     CLI_HOST = args.host or CLI_HOST
     CLI_PORT = args.port if args.port is not None else CLI_PORT
 
-    if CLI_HOST:
-        logging.info("Overriding request host with CLI value: %s", CLI_HOST)
-    if CLI_PORT is not None:
-        logging.info("Overriding request port with CLI value: %s", CLI_PORT)
+
+    logging.info("Teamserver host: %s", CLI_HOST)
+
+    logging.info("Teamserver port: %s", CLI_PORT)
 
     logging.info(
         "Starting HTTP bridge. Polling %s every %.2f seconds.",

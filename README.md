@@ -26,7 +26,7 @@ and modify the ```handleCallback()``` function in broker.py to do the following:
 
 Thats it.
 
-The PoC in the customCallback function in the hook.c currently does the following:
+The PoC in the ```customCallback``` function in the hook.c currently does the following:
 
 1. write the base64 blob to a file, request.txt
 2. waits 500ms

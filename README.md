@@ -52,7 +52,7 @@ listener.
 ## Usage
 the hook.c, hash.h and hook.h files are rough templates, but they can be dropped into [Crystal kit](https://github.com/rasta-mouse/Crystal-Kit) to be used as is as a PoC. Place them into the udrl/src folder, replacing the existing copies. tcg.h is unchanged (from Raphael Mudge's tradecraft garden)
 
-Note that evasion capabilities such as the Draugr implementation and sleep masking have been removed from the hook.c to keep this codebase clean and portable. If you wish to keep those features, you can add them back from the original copies in Crystal kit.
+Note that original evasion capabilities in Crystal kit such as the Draugr implementation and sleep masking have been removed from the hook.c to keep this codebase clean and portable. If you wish to keep those features, you can add them back from the original copies in Crystal kit.
 
 You must select wininet as the http library to use when generating the beacon dll.
 

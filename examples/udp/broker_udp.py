@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # Configuration
 # ---------------------------------------------------------------------------
 
-POLL_INTERVAL = 0.5  # seconds
+
 MAX_DATAGRAM_SIZE = 65535
 
 logging.basicConfig(
@@ -290,8 +290,7 @@ def main() -> None:
 
     while True:
         handled = handleCallback(process_encoded_request)
-        if not handled:
-            time.sleep(POLL_INTERVAL)
+
 
 
 if __name__ == "__main__":

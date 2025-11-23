@@ -94,6 +94,7 @@ DECLSPEC_IMPORT size_t MSVCRT$strlen(const char *str);
 DECLSPEC_IMPORT int MSVCRT$printf(const char *format, ...);
 DECLSPEC_IMPORT int MSVCRT$sprintf(char *buffer, const char *format, ...);
 DECLSPEC_IMPORT char *MSVCRT$strstr(const char *str1, const char *str2);
+DECLSPEC_IMPORT int MSVCRT$memcmp(const void *buf1, const void *buf2, size_t count);
 
 /* the proxy pic */
 DECLSPEC_IMPORT PVOID SpoofStub(PVOID, PVOID, PVOID, PVOID, PDRAUGR_PARAMETERS, PVOID, SIZE_T, PVOID, PVOID, PVOID, PVOID, PVOID, PVOID, PVOID, PVOID);

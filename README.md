@@ -20,7 +20,7 @@ Note that original evasion capabilities in Crystal kit such as the Draugr implem
 
 You must select wininet as the http library to use when generating the beacon dll.
 
-The malleable profile this was tested with is provided in the repo - in theory (most) other malleable profiles should work but this template was tested using this profile.
+The malleable profile this was tested with is provided in the repo - in theory (most) other malleable profiles should work but this template was tested using this profile (taken from GraphStrike).
 
 ## Why did I make this?
 The official ExternalC2 interface is a pain to use - it requires staging of an SMB beacon OVER the externalc2 channel, and (until 4.10) did not support communicating with a premade SMB beacon without staging through the externalc2 agent first. Even in its current state, it is still tied to the architecture of:  

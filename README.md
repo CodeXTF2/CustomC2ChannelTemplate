@@ -91,7 +91,7 @@ Also worth noting that there is no obfuscation or encryption on the http request
 - https://github.com/RedSiege/GraphStrike (IAT hooking to implement a Graph channel)
 - https://github.com/benheise/TitanLdr (IAT hooking to implement DoH)
 - https://tradecraftgarden.org/ (framework used for crystal kit, and by extension this)
-- github.com/ryanq47/CS-EXTC2-ICMP/tree/master/Client (ICMP channel)
+- https://github.com/ryanq47/CS-EXTC2-ICMP/tree/master/Client (ICMP channel)
 
 Yes I used an LLM to write some of the code and comments, nobody likes writing docs or writing boilerplate json parsing in C from scratch. Sue me.
 

@@ -2,6 +2,7 @@
 
 This is a simple PoC and template for developing custom C2 channels for Cobalt Strike using IAT hooks applied by a reflective loader.
 
+Blog post: [https://codex-7.gitbook.io/codexs-terminal-window/red-team/cobalt-strike/building-custom-c2-channels-by-hooking-wininet](https://codex-7.gitbook.io/codexs-terminal-window/red-team/cobalt-strike/building-custom-c2-channels-by-hooking-wininet)  
 Demo gif of the TCP channel
 ![gif.gif](https://github.com/CodeXTF2/CustomC2ChannelTemplate/blob/main/gif.gif?raw=true)
 

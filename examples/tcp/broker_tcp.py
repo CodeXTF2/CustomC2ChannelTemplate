@@ -6,7 +6,7 @@ import logging
 import socket
 import ssl
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -168,7 +168,7 @@ def process_encoded_request(encoded_request: str) -> str:
 #
 # ---------------------------------------------------------------------------
 
-def handleCallback() -> bool:
+def handleCallback(process_func: Callable[[str], str] = process_encoded_request) -> bool:
     """
     Handle a single callback cycle over a TCP connection.
 
@@ -219,7 +219,7 @@ def handleCallback() -> bool:
                 raw_request = _read_length_prefixed(conn)
                 encoded_request = raw_request.decode("utf-8")
 
-                encoded_response = process_encoded_request(encoded_request)
+                encoded_response = process_func(encoded_request)
                 _write_length_prefixed(conn, encoded_response.encode("utf-8"))
                 logging.info("Sent response over TCP (%d bytes).", len(encoded_response))
 
@@ -280,7 +280,7 @@ def main() -> None:
     logging.info("Listening on %s:%s for callbacks.", LISTEN_HOST, LISTEN_PORT)
 
     while True:
-        handled = handleCallback()
+        handled = handleCallback(process_encoded_request)
 
 
 

@@ -6,7 +6,7 @@ import logging
 import ssl
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -168,12 +168,12 @@ def process_encoded_request(encoded_request: str) -> str:
 #
 # ---------------------------------------------------------------------------
 
-def handleCallback() -> bool:
+def handleCallback(process_func: Callable[[str], str] = process_encoded_request) -> bool:
     """
     Handle a single callback cycle.
 
     - Obtain incoming raw data (here: from REQUEST_FILE).
-    - Call `process_encoded_request` with that data to handle decode/HTTP/encode.
+    - Call `process_func` with that data to handle decode/HTTP/encode.
     - Send the resulting raw data back (here: write to RESPONSE_FILE).
 
     Returns:
@@ -199,9 +199,9 @@ def handleCallback() -> bool:
         encoded_request = data
 
         # This is what you call to send data to the teamserver
-        # you must call process_encoded_request on the encoded request to get
+        # you must call process_func on the encoded request to get
         # the response
-        encoded_response = process_encoded_request(encoded_request)
+        encoded_response = process_func(encoded_request)
 
         # --- Send data back (transport-specific, inline) ---
         RESPONSE_FILE.write_text(encoded_response, encoding="utf-8")
@@ -260,7 +260,7 @@ def main() -> None:
     )
 
     while True:
-        handled = handleCallback()
+        handled = handleCallback(process_encoded_request)
         if not handled:
             time.sleep(POLL_INTERVAL)
 

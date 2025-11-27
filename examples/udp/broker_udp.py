@@ -6,7 +6,7 @@ import logging
 import socket
 import ssl
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -196,7 +196,7 @@ def _read_length_prefixed(packet: bytes) -> Optional[Tuple[str, bytes]]:
     return decoded, payload[msg_len:]
 
 
-def handleCallback() -> bool:
+def handleCallback(process_func: Callable[[str], str] = process_encoded_request) -> bool:
     """
     Handle a single callback cycle over UDP.
 
@@ -225,7 +225,7 @@ def handleCallback() -> bool:
                 return False
 
             encoded_request, _ = parsed
-            encoded_response = process_encoded_request(encoded_request)
+            encoded_response = process_func(encoded_request)
 
             response_bytes = encoded_response.encode("utf-8")
             framed = len(response_bytes).to_bytes(4, byteorder="little") + response_bytes
@@ -289,7 +289,7 @@ def main() -> None:
     logging.info("Listening on %s:%s for UDP callbacks.", LISTEN_HOST, LISTEN_PORT)
 
     while True:
-        handled = handleCallback()
+        handled = handleCallback(process_encoded_request)
 
 
 

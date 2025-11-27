@@ -6,17 +6,14 @@ Demo gif of the TCP channel
 ![gif.gif](https://github.com/CodeXTF2/CustomC2ChannelTemplate/blob/main/gif.gif?raw=true)
 
 ## Usage
-the hook.c, hash.h and hook.h files are rough templates, but they can be dropped into [Crystal kit](https://github.com/rasta-mouse/Crystal-Kit) to be used as is as a PoC. Place them into the udrl/src folder, replacing the existing copies. tcg.h is unchanged (from Raphael Mudge's tradecraft garden)
+the customCallback.h, hook.c, hash.h and hook.h files are rough templates, but they can be dropped into [Crystal kit](https://github.com/rasta-mouse/Crystal-Kit) to be used as is as a PoC. Place them into the udrl/src folder, replacing the existing copies. tcg.h is unchanged (from Raphael Mudge's tradecraft garden)
 
 Examples in the examples/ folder can be used as is, but they are **examples** and operational considerations were not taken when writing them. Use with caution.
 
 Current examples are:
 - named pipe (broker must run on same host)
 - TCP
-- ICMP
-- Websockets
 - UDP (I was too lazy to do chunking, so max callback size of 65535)
-- NTP (I was too lazy to do chunking, so max callback size of 65535)
 
 
 Note that original evasion capabilities in Crystal kit such as the Draugr implementation and sleep masking have been removed from the hook.c to keep this codebase clean and portable. If you wish to keep those features, you can add them back from the original copies in Crystal kit.
@@ -60,7 +57,7 @@ and modify the ```handleCallback()``` function in broker.py to do the following:
 
 Thats it.
 
-As an example, the PoC in the ```customCallback()``` function in the hook.c currently does the following:
+As an example, the PoC in the ```customCallback()``` function in the customCallback.h currently does the following:
 
 1. write the base64 blob to a file, request.txt
 2. waits 500ms
@@ -91,7 +88,6 @@ Also worth noting that there is no obfuscation or encryption on the http request
 - https://github.com/RedSiege/GraphStrike (IAT hooking to implement a Graph channel)
 - https://github.com/benheise/TitanLdr (IAT hooking to implement DoH)
 - https://tradecraftgarden.org/ (framework used for crystal kit, and by extension this)
-- https://github.com/ryanq47/CS-EXTC2-ICMP/ (ICMP channel)
 
 Yes I used an LLM to write some of the code and comments, nobody likes writing docs or writing boilerplate json parsing in C from scratch. Sue me.
 

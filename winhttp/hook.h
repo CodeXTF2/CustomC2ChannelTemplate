@@ -61,7 +61,6 @@ DECLSPEC_IMPORT BOOL              WINAPI KERNEL32$WriteFile              (HANDLE
 DECLSPEC_IMPORT BOOL              WINAPI KERNEL32$ReadFile               (HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
 DECLSPEC_IMPORT DWORD             WINAPI KERNEL32$GetFileSize            (HANDLE, LPDWORD);
 DECLSPEC_IMPORT DWORD             WINAPI KERNEL32$SetFilePointer         (HANDLE, LONG, PLONG, DWORD);
-DECLSPEC_IMPORT BOOL              WINAPI KERNEL32$WaitNamedPipeA         (LPCSTR, DWORD);
 DECLSPEC_IMPORT DWORD             WINAPI KERNEL32$WaitForSingleObject   (HANDLE, DWORD);
 DECLSPEC_IMPORT HANDLE            WINAPI KERNEL32$CreateFileMappingA     (HANDLE, LPSECURITY_ATTRIBUTES, DWORD, DWORD, DWORD, LPCSTR);
 DECLSPEC_IMPORT LPVOID            WINAPI KERNEL32$MapViewOfFile          (HANDLE, DWORD, DWORD, DWORD, SIZE_T);
@@ -89,12 +88,15 @@ DECLSPEC_IMPORT BOOL              WINAPI KERNEL32$HeapUnlock             (HANDLE
 DECLSPEC_IMPORT BOOL              WINAPI KERNEL32$HeapWalk               (HANDLE, LPPROCESS_HEAP_ENTRY);
 DECLSPEC_IMPORT HMODULE           WINAPI KERNEL32$LoadLibraryA           (LPCSTR);
 DECLSPEC_IMPORT BOOL              WINAPI KERNELBASE$ReadFile             (HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
+DECLSPEC_IMPORT int               WINAPI KERNEL32$WideCharToMultiByte    (UINT, DWORD, LPCWCH, int, LPSTR, int, LPCCH, LPBOOL);
+DECLSPEC_IMPORT int               WINAPI KERNEL32$MultiByteToWideChar    (UINT, DWORD, LPCCH, int, LPWSTR, int);
 DECLSPEC_IMPORT ULONG             NTAPI  NTDLL$RtlRandomEx               (PULONG);
 DECLSPEC_IMPORT ULONG             NTAPI  NTDLL$NtContinue                (PCONTEXT, BOOLEAN);
 DECLSPEC_IMPORT size_t MSVCRT$strlen(const char *str);
 DECLSPEC_IMPORT int MSVCRT$printf(const char *format, ...);
 DECLSPEC_IMPORT int MSVCRT$sprintf(char *buffer, const char *format, ...);
 DECLSPEC_IMPORT char *MSVCRT$strstr(const char *str1, const char *str2);
+DECLSPEC_IMPORT int MSVCRT$memcmp(const void *buf1, const void *buf2, size_t count);
 
 /* the proxy pic */
 DECLSPEC_IMPORT PVOID SpoofStub(PVOID, PVOID, PVOID, PVOID, PDRAUGR_PARAMETERS, PVOID, SIZE_T, PVOID, PVOID, PVOID, PVOID, PVOID, PVOID, PVOID, PVOID);

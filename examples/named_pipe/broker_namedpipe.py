@@ -6,7 +6,7 @@ import logging
 import ssl
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import pywintypes
 import win32file
@@ -173,7 +173,7 @@ def process_encoded_request(encoded_request: str) -> str:
 #
 # ---------------------------------------------------------------------------
 
-def handleCallback() -> bool:
+def handleCallback(process_func: Callable[[str], str] = process_encoded_request) -> bool:
     """
     Handle a single callback cycle over a named pipe connection.
 
@@ -226,7 +226,7 @@ def handleCallback() -> bool:
         raw_request = _read_length_prefixed(pipe_handle)
         encoded_request = raw_request.decode("utf-8")
 
-        encoded_response = process_encoded_request(encoded_request)
+        encoded_response = process_func(encoded_request)
         _write_length_prefixed(pipe_handle, encoded_response.encode("utf-8"))
         logging.info("Sent response over named pipe (%d bytes).", len(encoded_response))
 
@@ -288,7 +288,7 @@ def main() -> None:
     )
 
     while True:
-        handled = handleCallback()
+        handled = handleCallback(process_encoded_request)
         if not handled:
             time.sleep(POLL_INTERVAL)
 

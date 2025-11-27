@@ -15,6 +15,10 @@ Current examples are:
 - named pipe (broker must run on same host)
 - TCP
 - UDP (I was too lazy to do chunking, so max callback size of 65535)
+- NTP (I was too lazy to do chunking, so max callback size of 65535)
+- ICMP (I was too lazy to do chunking, so max callback size of 65535)
+- Websockets (only works with wininet, to be fixed)
+
 
 
 Note that original evasion capabilities in Crystal kit such as the Draugr implementation and sleep masking have been removed from the hook.c to keep this codebase clean and portable. If you wish to keep those features, you can add them back from the original copies in Crystal kit.
